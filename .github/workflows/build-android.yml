@@ -128,8 +128,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: 接星星 StarCatcher v1.0.0
+          tag_name: v1.0.1
+          name: 接星星 StarCatcher v1.0.1
           target_commitish: ${{ github.sha }}
           make_latest: true
           files: dist/*

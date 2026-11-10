@@ -102,8 +102,10 @@ export class StarCatcher extends Component {
         this.scoreLabel.node.getComponent(UITransform)!.setContentSize(this.w - 60, 80);
         this.livesLabel.node.getComponent(UITransform)!.setContentSize(this.w - 60, 80);
         this.msgLabel.node.getComponent(UITransform)!.setContentSize(this.w - 60, 600);
-        this.scoreLabel.node.setPosition(0, top);
-        this.livesLabel.node.setPosition(0, top);
+        this.scoreLabel.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+        this.livesLabel.node.getComponent(UITransform)!.setAnchorPoint(1, 0.5);
+        this.scoreLabel.node.setPosition(-this.w / 2 + 30, top);
+        this.livesLabel.node.setPosition(this.w / 2 - 30, top);
         this.msgLabel.node.setPosition(0, 60);
 
         this.bg = [];
@@ -349,10 +351,6 @@ export class StarCatcher extends Component {
 
     private drawStar(x: number, y: number, r: number, rot: number) {
         const g = this.g;
-        // 光暈
-        g.fillColor = new Color(255, 230, 120, 50);
-        g.circle(x, y, r * 1.5);
-        g.fill();
         g.fillColor = new Color(255, 214, 60, 255);
         g.strokeColor = new Color(255, 160, 20, 255);
         g.lineWidth = 3;
