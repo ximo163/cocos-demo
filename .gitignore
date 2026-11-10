@@ -1,0 +1,8 @@
+library/
+temp/
+local/
+build/
+profiles/
+node_modules/
+.creator/
+*.apk

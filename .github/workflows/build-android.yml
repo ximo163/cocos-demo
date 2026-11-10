@@ -1,0 +1,145 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CC_VERSION: 3.8.6
+  CC_URL: https://download.cocos.com/CocosCreator/v3.8.6/CocosCreator-v3.8.6-win-032501.zip
+  NDK_VERSION: 23.2.8568313
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android NDK
+        shell: pwsh
+        run: |
+          $sdk = $env:ANDROID_HOME
+          if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
+          echo "SDK: $sdk"
+          $sm = Get-ChildItem "$sdk\cmdline-tools" -Recurse -Filter sdkmanager.bat | Select-Object -First 1
+          echo "y" | & $sm.FullName "ndk;$env:NDK_VERSION" "platforms;android-34" "build-tools;34.0.0" | Select-Object -Last 5
+          "ANDROID_SDK=$sdk" >> $env:GITHUB_ENV
+          "ANDROID_NDK=$sdk\ndk\$env:NDK_VERSION" >> $env:GITHUB_ENV
+
+      - name: Cache Cocos Creator
+        id: cache-cc
+        uses: actions/cache@v4
+        with:
+          path: C:\cocos
+          key: cocos-creator-win-${{ env.CC_VERSION }}
+
+      - name: Download Cocos Creator
+        if: steps.cache-cc.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl.exe -L --retry 3 -o "$env:RUNNER_TEMP\cc.zip" $env:CC_URL
+          7z x "$env:RUNNER_TEMP\cc.zip" -oC:\cocos -y | Out-Null
+
+      - name: Locate editor & set preferences
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem C:\cocos -Recurse -Filter CocosCreator.exe | Select-Object -First 1
+          echo "Editor: $($exe.FullName)"
+          "CC_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+          # Android SDK / NDK paths for the editor (global preferences)
+          $dir = "$env:USERPROFILE\.CocosCreator\profiles\v2\packages"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $sdk = $env:ANDROID_SDK -replace '\\','/'
+          $ndk = $env:ANDROID_NDK -replace '\\','/'
+          $json = @{ __version__ = "1.0.1"; android = @{ sdkPath = $sdk; ndkPath = $ndk }; native = @{ sdkPath = $sdk; ndkPath = $ndk; android = @{ sdkPath = $sdk; ndkPath = $ndk } } } | ConvertTo-Json -Depth 5
+          Set-Content -Path "$dir\program.json" -Value $json
+          Set-Content -Path "$dir\android.json" -Value $json
+          Set-Content -Path "$dir\native.json" -Value $json
+          Get-Content "$dir\program.json"
+
+      - name: Build web-mobile
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $p = Start-Process -FilePath $env:CC_EXE -ArgumentList @("--project", "`"$pwd`"", "--build", "`"configPath=$pwd\buildConfig_web.json`"") -Wait -PassThru -NoNewWindow
+          echo "Exit code: $($p.ExitCode)"
+          Get-ChildItem build -ErrorAction SilentlyContinue
+          if (-not (Test-Path build\web-mobile\index.html)) { exit 1 }
+
+      - name: Build Android (Cocos)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $p = Start-Process -FilePath $env:CC_EXE -ArgumentList @("--project", "`"$pwd`"", "--build", "`"configPath=$pwd\buildConfig_android.json`"") -Wait -PassThru -NoNewWindow
+          echo "Exit code: $($p.ExitCode)"
+          Get-ChildItem build\android -ErrorAction SilentlyContinue
+
+      - name: Show build logs
+        if: always()
+        shell: pwsh
+        run: |
+          Get-ChildItem temp -Recurse -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { echo "===== $($_.FullName)"; Get-Content $_.FullName -Tail 120 }
+
+      - name: Gradle fallback (if editor did not produce an APK)
+        shell: pwsh
+        run: |
+          $apk = Get-ChildItem build\android -Recurse -Filter *.apk -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($apk) { echo "APK already built: $($apk.FullName)"; exit 0 }
+          if (-not (Test-Path build\android\proj\gradlew.bat)) { echo "No gradle project was generated"; exit 1 }
+          Push-Location build\android\proj
+          $props = Get-Content gradle.properties
+          $ndk = $env:ANDROID_NDK -replace '\\','/'
+          $props = $props -replace '^PROP_NDK_PATH=.*', "PROP_NDK_PATH=$ndk"
+          Set-Content gradle.properties $props
+          Select-String -Path gradle.properties -Pattern 'PROP_|COCOS|RES_PATH|NATIVE_DIR'
+          "sdk.dir=$($env:ANDROID_SDK -replace '\\','/')" | Set-Content local.properties
+          .\gradlew.bat assembleRelease --no-daemon --stacktrace
+          Pop-Location
+
+      - name: Collect outputs
+        id: collect
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $apk = Get-ChildItem build\android -Recurse -Filter *.apk | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $apk) { echo "No APK found"; exit 1 }
+          Copy-Item $apk.FullName dist\StarCatcher.apk
+          if (Test-Path build\web-mobile\index.html) { Compress-Archive -Path build\web-mobile\* -DestinationPath dist\StarCatcher-web.zip }
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarCatcher
+          path: dist/*
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: 接星星 StarCatcher v1.0.0
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: dist/*
+          body: |
+            用 Cocos Creator ${{ env.CC_VERSION }} 製作的安卓小遊戲「接星星」。
+
+            **安裝**：下載 `StarCatcher.apk` 到手機安裝（需允許「安裝未知來源應用」）。
+
+            **玩法**
+            - 手指左右拖動，移動底部的籃子
+            - ★ 星星：+1 分
+            - ♥ 愛心：+1 條命（最多 5 條）
+            - 💣 炸彈：-1 條命，3 條命用完遊戲結束
+            - 越玩掉落越快，最高分會自動保存
+
+            `StarCatcher-web.zip` 是同一遊戲的網頁版（解壓後用本地伺服器開啟 index.html）。
