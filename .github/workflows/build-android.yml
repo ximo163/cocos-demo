@@ -67,6 +67,15 @@ jobs:
           Set-Content -Path "$dir\native.json" -Value $json
           Get-Content "$dir\program.json"
 
+      - name: Inspect editor preference schema
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Get-ChildItem "$env:USERPROFILE\.CocosCreator\profiles\v2\packages" | ForEach-Object { echo "== $($_.Name)"; Get-Content $_.FullName }
+          npx -y @electron/asar extract C:\cocos\resources\app.asar "$env:RUNNER_TEMP\asar" | Out-Null
+          Get-ChildItem "$env:RUNNER_TEMP\asar" -Recurse -Include package.json,*.json -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'node_modules' } | Select-String -Pattern 'ndk' -SimpleMatch | Select-Object -First 40 | ForEach-Object { "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }
+          Get-ChildItem "$env:RUNNER_TEMP\asar\modules\platform-extensions\extensions\android" -Recurse -File | Select-String -Pattern 'ndk' | Select-Object -First 30 | ForEach-Object { "$($_.Path):$($_.LineNumber): $($_.Line.Substring(0, [Math]::Min(300, $_.Line.Length)))" }
+
       - name: Build web-mobile
         shell: pwsh
         continue-on-error: true
