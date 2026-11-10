@@ -50,6 +50,13 @@ jobs:
           curl.exe -L --retry 3 -o "$env:RUNNER_TEMP\cc.zip" $env:CC_URL
           7z x "$env:RUNNER_TEMP\cc.zip" -oC:\cocos -y | Out-Null
 
+      - name: Save Cocos Creator cache
+        if: steps.cache-cc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\cocos
+          key: cocos-creator-win-${{ env.CC_VERSION }}
+
       - name: Locate editor & set preferences
         shell: pwsh
         run: |
@@ -61,20 +68,17 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           $sdk = $env:ANDROID_SDK -replace '\\','/'
           $ndk = $env:ANDROID_NDK -replace '\\','/'
-          $json = @{ __version__ = "1.0.1"; android = @{ sdkPath = $sdk; ndkPath = $ndk }; native = @{ sdkPath = $sdk; ndkPath = $ndk; android = @{ sdkPath = $sdk; ndkPath = $ndk } } } | ConvertTo-Json -Depth 5
-          Set-Content -Path "$dir\program.json" -Value $json
-          Set-Content -Path "$dir\android.json" -Value $json
-          Set-Content -Path "$dir\native.json" -Value $json
-          Get-Content "$dir\program.json"
+          Set-Content -Path "$dir\android.json" -Value (@{ androidSDK = $sdk; androidNDK = $ndk } | ConvertTo-Json)
+          Get-Content "$dir\android.json"
 
-      - name: Inspect editor preference schema
+      - name: Show Android extension preference schema
         shell: pwsh
         continue-on-error: true
         run: |
-          Get-ChildItem "$env:USERPROFILE\.CocosCreator\profiles\v2\packages" | ForEach-Object { echo "== $($_.Name)"; Get-Content $_.FullName }
-          npx -y @electron/asar extract C:\cocos\resources\app.asar "$env:RUNNER_TEMP\asar" | Out-Null
-          Get-ChildItem "$env:RUNNER_TEMP\asar" -Recurse -Include package.json,*.json -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'node_modules' } | Select-String -Pattern 'ndk' -SimpleMatch | Select-Object -First 40 | ForEach-Object { "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }
-          Get-ChildItem "$env:RUNNER_TEMP\asar\modules\platform-extensions\extensions\android" -Recurse -File | Select-String -Pattern 'ndk' | Select-Object -First 30 | ForEach-Object { "$($_.Path):$($_.LineNumber): $($_.Line.Substring(0, [Math]::Min(300, $_.Line.Length)))" }
+          Push-Location $env:RUNNER_TEMP
+          npx -y @electron/asar extract-file C:\cocos\resources\app.asar modules\platform-extensions\extensions\android\package.json
+          Get-Content package.json -TotalCount 60
+          Pop-Location
 
       - name: Build web-mobile
         shell: pwsh
