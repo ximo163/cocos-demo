@@ -71,8 +71,7 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
-          $p = Start-Process -FilePath $env:CC_EXE -ArgumentList @("--project", "`"$pwd`"", "--build", "`"configPath=$pwd\buildConfig_web.json`"") -Wait -PassThru -NoNewWindow
-          echo "Exit code: $($p.ExitCode)"
+          ./ci/cocos-build.ps1 -Config buildConfig_web.json -TimeoutMinutes 20
           Get-ChildItem build -ErrorAction SilentlyContinue
           if (-not (Test-Path build\web-mobile\index.html)) { exit 1 }
 
@@ -80,15 +79,14 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
-          $p = Start-Process -FilePath $env:CC_EXE -ArgumentList @("--project", "`"$pwd`"", "--build", "`"configPath=$pwd\buildConfig_android.json`"") -Wait -PassThru -NoNewWindow
-          echo "Exit code: $($p.ExitCode)"
+          ./ci/cocos-build.ps1 -Config buildConfig_android.json -TimeoutMinutes 50
           Get-ChildItem build\android -ErrorAction SilentlyContinue
 
       - name: Show build logs
         if: always()
         shell: pwsh
         run: |
-          Get-ChildItem temp -Recurse -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { echo "===== $($_.FullName)"; Get-Content $_.FullName -Tail 120 }
+          Get-ChildItem temp\builder -Recurse -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { echo "===== $($_.FullName)"; Get-Content $_.FullName -Tail 120 }
 
       - name: Gradle fallback (if editor did not produce an APK)
         shell: pwsh

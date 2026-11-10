@@ -15,7 +15,7 @@
       "packageName": "com.ximo.starcatcher",
       "orientation": { "portrait": true, "upsideDown": false, "landscapeLeft": false, "landscapeRight": false },
       "apiLevel": 34,
-      "appABIs": ["arm64-v8a", "armeabi-v7a"],
+      "appABIs": ["arm64-v8a"],
       "useDebugKeystore": true,
       "appBundle": false,
       "androidInstant": false,
